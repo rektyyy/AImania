@@ -6,12 +6,20 @@ enum MessageType {
     CSetSpeed,
     CRewindToState,
     CSetInputState,
-    CShutdown
+    CShutdown,
+    CGiveUp,
+    CExecuteCommand,
+    CRequestFrame,
+    SCRequestedFrameSync
 }
 
 const string HOST = "127.0.0.1";
 const uint16 PORT = 8477;
 const uint RESPONSE_TIMEOUT = 2000;
+const bool debug = true;
+int next_frame_requested_W = -1;
+int next_frame_requested_H = -1;
+bool setup = true;
 
 void WaitForResponse(MessageType type)
 {
@@ -70,7 +78,9 @@ int HandleMessage()
             int8 up   = clientSock.ReadInt8();
             int8 down = clientSock.ReadInt8();
             int steer = clientSock.ReadInt32();
-
+            if(debug){
+                log("Recieved input: UP: " + up + "DOWN: " + down + "STEER: " + steer);
+            }
             auto@ simManager = GetSimulationManager();
             if (simManager.InRace) {
                 log("Set input state");
@@ -87,8 +97,43 @@ int HandleMessage()
         case MessageType::CShutdown: {
             log("Client disconnected");
             @clientSock = null;
+            next_frame_requested_H = -1;
             break;
         }
+
+        case MessageType::CGiveUp: {
+            if(debug){
+                print("Server: Give up");
+            }
+            auto@ simManager = GetSimulationManager();
+            if (simManager.InRace) {
+                simManager.GiveUp();
+            }
+            break;
+        }
+        
+        case MessageType::CExecuteCommand: {
+            const int32 bytes_to_read = clientSock.ReadInt32();
+            const string command = clientSock.ReadString(bytes_to_read);
+            if(debug){
+                print("Server: command "+command+" received");
+            }
+            ExecuteCommand(command);
+            break;
+        }
+
+        case MessageType::CRequestFrame: {
+            next_frame_requested_W = clientSock.ReadInt32();
+            next_frame_requested_H = clientSock.ReadInt32();
+            if(debug){
+                print("Client requested next frame in size "+next_frame_requested_W+" "+next_frame_requested_H);
+            }
+            break;
+        }
+        case MessageType::SCRequestedFrameSync: {
+            break;
+        }
+
     }
 
     return type;
@@ -117,6 +162,7 @@ void Main()
     }
 }
 
+
 void Render()
 {
     auto @newSock = sock.Accept(0);
@@ -124,14 +170,41 @@ void Render()
         @clientSock = @newSock;
         log("Client connected (IP: " + clientSock.RemoteIP + ")");
     }
+    if(next_frame_requested_H >= 0){
+        const auto@ frame = Graphics::CaptureScreenshot(vec2(next_frame_requested_W, next_frame_requested_H));
+        array<uint8> grayscaleFrame(next_frame_requested_W * next_frame_requested_H);
+
+        for (int i = 0; i < next_frame_requested_W * next_frame_requested_H; ++i) {
+            uint8 b = frame[i * 4];
+            uint8 g = frame[i * 4 + 1];
+            uint8 r = frame[i * 4 + 2];
+            
+            //Formula for grayscale image from rgb
+            grayscaleFrame[i] = uint8(0.299 * r + 0.587 * g + 0.114 * b); 
+        }
+        clientSock.Write(MessageType::SCRequestedFrameSync);
+        clientSock.Write(grayscaleFrame);
+        next_frame_requested_H = -1;
+        WaitForResponse(MessageType::SCRequestedFrameSync);
+        if(debug){
+            print("Got response from client for SCRequestedFrameSync");
+        }
+    }
+    if(setup && clientSock !is null){
+        // Change number of setup commands by hand
+        for(int i = 0; i < 3; i++){
+            WaitForResponse(MessageType::CExecuteCommand);
+        }
+        setup = false;
+    }
 }
 
 PluginInfo@ GetPluginInfo()
 {
     PluginInfo info;
-    info.Author = "donadigo";
-    info.Name = "Test";
-    info.Description = "Sockets example";
-    info.Version = "1.0.0";
+    info.Author = "rektyyy";
+    info.Name = "Python <-> Trackmania";
+    info.Description = "Connects game with python code";
+    info.Version = "1.0.1";
     return info;
 }
