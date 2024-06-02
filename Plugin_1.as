@@ -14,11 +14,13 @@ enum MessageType {
 }
 
 const string HOST = "127.0.0.1";
-const uint16 PORT = 8477;
+const uint16 PORT = 8478;
 const uint RESPONSE_TIMEOUT = 2000;
 const bool debug = true;
 int next_frame_requested_W = -1;
 int next_frame_requested_H = -1;
+int next_frame_requested_H_low = -1;
+int next_frame_requested_H_high = -1;
 bool setup = true;
 
 void WaitForResponse(MessageType type)
@@ -125,8 +127,11 @@ int HandleMessage()
         case MessageType::CRequestFrame: {
             next_frame_requested_W = clientSock.ReadInt32();
             next_frame_requested_H = clientSock.ReadInt32();
+            next_frame_requested_H_low = clientSock.ReadInt32();
+            next_frame_requested_H_high = clientSock.ReadInt32();
             if(debug){
-                print("Client requested next frame in size "+next_frame_requested_W+" "+next_frame_requested_H);
+                print("Client requested next frame in size: "+next_frame_requested_W+" "+next_frame_requested_H+
+                " "+next_frame_requested_H_low+ " "+next_frame_requested_H_high);
             }
             break;
         }
@@ -172,18 +177,30 @@ void Render()
     }
     if(next_frame_requested_H >= 0){
         const auto@ frame = Graphics::CaptureScreenshot(vec2(next_frame_requested_W, next_frame_requested_H));
-        array<uint8> grayscaleFrame(next_frame_requested_W * next_frame_requested_H);
-
-        for (int i = 0; i < next_frame_requested_W * next_frame_requested_H; ++i) {
+        array<uint8> blackWhiteFrame(next_frame_requested_W * (next_frame_requested_H_high - next_frame_requested_H_low));
+        
+        int counter = 0;
+        for (int i = next_frame_requested_W * next_frame_requested_H_low; i < next_frame_requested_W * next_frame_requested_H_high; ++i) {
             uint8 b = frame[i * 4];
             uint8 g = frame[i * 4 + 1];
             uint8 r = frame[i * 4 + 2];
             
-            //Formula for grayscale image from rgb
-            grayscaleFrame[i] = uint8(0.299 * r + 0.587 * g + 0.114 * b); 
+            // Formula for grayscale image from rgb
+            uint8 gray = uint8(0.299 * r + 0.587 * g + 0.114 * b); 
+
+            // Convert to black/white
+            uint8 threshold = 85;
+            if(gray < threshold) {
+                blackWhiteFrame[counter] = 255;
+            }
+            else {
+                blackWhiteFrame[counter] = 0;
+            }
+            counter++;
         }
+
         clientSock.Write(MessageType::SCRequestedFrameSync);
-        clientSock.Write(grayscaleFrame);
+        clientSock.Write(blackWhiteFrame);
         next_frame_requested_H = -1;
         WaitForResponse(MessageType::SCRequestedFrameSync);
         if(debug){

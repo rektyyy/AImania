@@ -3,11 +3,13 @@ import struct
 import time
 import signal
 import numpy as np
+import random
+import cv2
 from tminterface.structs import SimStateData, CheckpointData
 from PIL import Image
 
 HOST = "127.0.0.1"
-PORT = 8477
+PORT = 8478
 
 SC_RUN_STEP_SYNC = 0
 C_SET_SPEED = 1
@@ -21,7 +23,9 @@ SC_REQUESTED_FRAME_SYNC = 8
 
 sock = None
 width = 160
-height = 90
+height = 160
+newHeightUp = int(height * 0.8)
+newHeightLow = int(height * 0.4)
 requested_frames = 0
 
 def signal_handler(sig, frame):
@@ -31,7 +35,7 @@ def signal_handler(sig, frame):
     sock.sendall(struct.pack('i', C_SHUTDOWN))
     sock.close()
 
-
+#TODO: fix
 def rewind_to_state(sock, state):
     sock.sendall(struct.pack('i', C_REWIND_TO_STATE))
     sock.sendall(struct.pack('i', len(state.data)))
@@ -50,10 +54,10 @@ def execute_command(sock, command):
     sock.sendall(struct.pack("ii", C_EXECUTE_COMMAND, np.int32(len(command))))
     sock.sendall(command.encode())  # https://www.delftstack.com/howto/python/python-socket-send-string/
 
-def request_frame(sock, W, H):
+def request_frame(sock, W, H, H_low, H_high):
     global requested_frames
     requested_frames += 1
-    sock.sendall(struct.pack("iii", C_REQUEST_FRAME, np.int32(W), np.int32(H)))
+    sock.sendall(struct.pack("iiiii", C_REQUEST_FRAME, np.int32(W), np.int32(H), np.int32(H_low), np.int32(H_high)))
 
 def get_frame(sock, width, height):
     global requested_frames
@@ -66,18 +70,20 @@ def get_frame(sock, width, height):
 def respond(sock, type):
     sock.sendall(struct.pack('i', type))
 
-# Function to test frames
-def create_grayscale_image(grayscale_data, width, height):
-    # Ensure grayscale_data is a numpy array with the correct dtype
-    grayscale_data = np.array(grayscale_data, dtype=np.uint8).reshape((height, width))
+# Function to process frames
+def create_blackwhite_image(blackwhite_data, width, height):
+    blackwhite_data = np.array(blackwhite_data, dtype=np.uint8).reshape((height, width))
+    edges = cv2.Canny(blackwhite_data, threshold1=80, threshold2=90)
+    dilation = cv2.dilate(edges, np.ones((7, 7), np.uint8), iterations=1)
+    softedges = cv2.GaussianBlur(dilation, (11, 11), 1.0)
+    binary_image_array = (softedges > 128).astype(np.uint8) * 255
 
-    # Create a grayscale (L mode) image from the numpy array
-    image = Image.fromarray(grayscale_data, 'L')
+    image = Image.fromarray(binary_image_array, 'L')
 
     return image
 
 def main():
-    global sock, width, height
+    global sock, width, height, newHeightLow, newHeightUp
 
     first_state = 0
 
@@ -93,9 +99,14 @@ def main():
     print('Connected')
     
     # Add commands in reverse order
-    execute_command(sock, 'map "My Challenges\A01-Race.Challenge.Gbx"')
-    execute_command(sock, "set skip_map_load_screens true")
-    execute_command(sock, "set autologin 1")
+    beforeGameSetupCommands = ['map "My Challenges\mytrack.Challenge.Gbx"',
+                               "set skip_map_load_screens true",
+                               "set autologin 1"]
+    
+    for c in beforeGameSetupCommands:
+        execute_command(sock, c)
+
+    inGameSetupCommands = ["cam 1"]
     while True:
         message_type = struct.unpack('i', sock.recv(4))[0]
         if message_type == SC_RUN_STEP_SYNC:
@@ -105,26 +116,24 @@ def main():
             state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
 
             race_time = state.player_info.race_time
-            # if race_time == 0:
-            #     first_state = state
-            #     set_input_state(sock, up=True)
-
-            # if race_time == 3000:
-            #     width = 1600
-            #     height = 900
-            #     request_frame(sock, width, height)
+            if race_time > 60000: #minuta
                 #give_up(sock)
-                #execute_command(sock, "vars")
+                rewind_to_state(sock, first_state)
+            
+            if race_time == 0:
+                first_state = state
+                for c in inGameSetupCommands:
+                    execute_command(sock, c)
 
-            # if race_time > 0 and race_time % 5000 == 0 and first_state:
-            #     rewind_to_state(sock, first_state)
-            #     set_input_state(sock, up=True, steer=65536)
+            upOrDown = random.randint(0, 1)
+            #steer = random.randint(-65536, 65536)
+            #set_input_state(sock, up=True, steer=steer)
 
     
             respond(sock, SC_RUN_STEP_SYNC)
 
-            if time.time() - now > 1:
-                request_frame(sock, width, height)
+            if time.time() - now > 0.1:
+                request_frame(sock, width, height, newHeightLow, newHeightUp)
                 #print(f'Effective speed: {ticks_per_second / 100}x')
 
                 # Pozycja gracza [przod/tyl, gora/dol, lewo/prawo]
@@ -151,9 +160,10 @@ def main():
             ticks_per_second += 1
         elif message_type == int(SC_REQUESTED_FRAME_SYNC):
             respond(sock, SC_REQUESTED_FRAME_SYNC)
-            frame = get_frame(sock, width, height)
-            image = create_grayscale_image(frame, width, height)
-            image.show()
+            frame = get_frame(sock, width, newHeightUp - newHeightLow)
+            image = create_blackwhite_image(frame, width, newHeightUp - newHeightLow)
+            image.save('output_image_blackwhite.png')
+            #image.show()
 
 if __name__ == "__main__":
     main()
