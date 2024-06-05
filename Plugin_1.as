@@ -22,6 +22,7 @@ int next_frame_requested_H = -1;
 int next_frame_requested_H_low = -1;
 int next_frame_requested_H_high = -1;
 bool setup = true;
+auto@ simManager = GetSimulationManager();
 
 void WaitForResponse(MessageType type)
 {
@@ -58,7 +59,6 @@ int HandleMessage()
         }
 
         case MessageType::CSetSpeed: {
-            auto@ simManager = GetSimulationManager();
             simManager.SetSpeed(clientSock.ReadFloat());
             break;
         }
@@ -66,7 +66,6 @@ int HandleMessage()
         case MessageType::CRewindToState: {
             auto stateLength = clientSock.ReadInt32();
             auto stateData = clientSock.ReadBytes(stateLength);
-            auto@ simManager = GetSimulationManager();
             if (simManager.InRace) {
                 SimulationState state(stateData);
                 simManager.RewindToState(state);
@@ -83,7 +82,6 @@ int HandleMessage()
             if(debug){
                 log("Recieved input: UP: " + up + "DOWN: " + down + "STEER: " + steer);
             }
-            auto@ simManager = GetSimulationManager();
             if (simManager.InRace) {
                 log("Set input state");
                 simManager.SetInputState(InputType::Up, up);
@@ -107,7 +105,6 @@ int HandleMessage()
             if(debug){
                 print("Server: Give up");
             }
-            auto@ simManager = GetSimulationManager();
             if (simManager.InRace) {
                 simManager.GiveUp();
             }
@@ -135,6 +132,7 @@ int HandleMessage()
             }
             break;
         }
+
         case MessageType::SCRequestedFrameSync: {
             break;
         }

@@ -7,68 +7,15 @@ import random
 import cv2
 from tminterface.structs import SimStateData, CheckpointData
 from PIL import Image
+from tminterface2 import MessageType, TMInterface
 
 HOST = "127.0.0.1"
 PORT = 8478
+WIDTH = 160
+HEIGHT = 160
+HEIGHT_MULT_UP = 0.8
+HEIGHT_MULT_LOW = 0.4
 
-SC_RUN_STEP_SYNC = 0
-C_SET_SPEED = 1
-C_REWIND_TO_STATE = 2
-C_SET_INPUT_STATE = 3
-C_SHUTDOWN = 4
-C_GIVE_UP = 5
-C_EXECUTE_COMMAND = 6
-C_REQUEST_FRAME = 7
-SC_REQUESTED_FRAME_SYNC = 8
-
-sock = None
-width = 160
-height = 160
-newHeightUp = int(height * 0.8)
-newHeightLow = int(height * 0.4)
-requested_frames = 0
-
-def signal_handler(sig, frame):
-    global sock
-
-    print('Shutting down...')
-    sock.sendall(struct.pack('i', C_SHUTDOWN))
-    sock.close()
-
-#TODO: fix
-def rewind_to_state(sock, state):
-    sock.sendall(struct.pack('i', C_REWIND_TO_STATE))
-    sock.sendall(struct.pack('i', len(state.data)))
-    sock.sendall(state.data)
-
-def set_input_state(sock, up=-1, down=-1, steer=0x7FFFFFFF):
-    sock.sendall(struct.pack('i', C_SET_INPUT_STATE))
-    sock.sendall(struct.pack('b', up))
-    sock.sendall(struct.pack('b', down))
-    sock.sendall(struct.pack('i', steer))
-
-def give_up(sock):
-    sock.sendall(struct.pack("i", C_GIVE_UP))
-
-def execute_command(sock, command):
-    sock.sendall(struct.pack("ii", C_EXECUTE_COMMAND, np.int32(len(command))))
-    sock.sendall(command.encode())  # https://www.delftstack.com/howto/python/python-socket-send-string/
-
-def request_frame(sock, W, H, H_low, H_high):
-    global requested_frames
-    requested_frames += 1
-    sock.sendall(struct.pack("iiiii", C_REQUEST_FRAME, np.int32(W), np.int32(H), np.int32(H_low), np.int32(H_high)))
-
-def get_frame(sock, width, height):
-    global requested_frames
-    if requested_frames == 0:
-        raise Exception('cannot download frame')
-    requested_frames -= 1
-    frame_data = sock.recv(width * height * 1, socket.MSG_WAITALL)
-    return np.frombuffer(frame_data, dtype=np.uint8).reshape((height, width, 1))
-
-def respond(sock, type):
-    sock.sendall(struct.pack('i', type))
 
 # Function to process frames
 def create_blackwhite_image(blackwhite_data, width, height):
@@ -83,8 +30,6 @@ def create_blackwhite_image(blackwhite_data, width, height):
     return image
 
 def main():
-    global sock, width, height, newHeightLow, newHeightUp
-
     first_state = 0
 
     frame = 0
@@ -92,10 +37,11 @@ def main():
     ticks_per_second = 0
     now = time.time()
 
+    iface = TMInterface(HOST, PORT, WIDTH, HEIGHT, HEIGHT_MULT_UP, HEIGHT_MULT_LOW)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    signal.signal(signal.SIGINT, signal_handler)
-
+    signal.signal(signal.SIGINT, iface.signal_handler)
     sock.connect((HOST, PORT))
+    iface.sock = sock
     print('Connected')
     
     # Add commands in reverse order
@@ -104,12 +50,13 @@ def main():
                                "set autologin 1"]
     
     for c in beforeGameSetupCommands:
-        execute_command(sock, c)
+        iface.execute_command(c)
 
     inGameSetupCommands = ["cam 1"]
     while True:
         message_type = struct.unpack('i', sock.recv(4))[0]
-        if message_type == SC_RUN_STEP_SYNC:
+        if message_type == MessageType.SC_RUN_STEP_SYNC.value:
+
             state_length = struct.unpack('i', sock.recv(4))[0]
             state = SimStateData(sock.recv(state_length))
             state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length)
@@ -118,22 +65,22 @@ def main():
             race_time = state.player_info.race_time
             if race_time > 60000: #minuta
                 #give_up(sock)
-                rewind_to_state(sock, first_state)
+                iface.rewind_to_state(first_state)
             
             if race_time == 0:
                 first_state = state
                 for c in inGameSetupCommands:
-                    execute_command(sock, c)
+                    iface.execute_command(c)
 
             upOrDown = random.randint(0, 1)
             #steer = random.randint(-65536, 65536)
             #set_input_state(sock, up=True, steer=steer)
 
     
-            respond(sock, SC_RUN_STEP_SYNC)
+            iface.respond(MessageType.SC_RUN_STEP_SYNC.value)
 
             if time.time() - now > 0.1:
-                request_frame(sock, width, height, newHeightLow, newHeightUp)
+                iface.request_frame()
                 #print(f'Effective speed: {ticks_per_second / 100}x')
 
                 # Pozycja gracza [przod/tyl, gora/dol, lewo/prawo]
@@ -158,10 +105,10 @@ def main():
                 ticks_per_second = 0
 
             ticks_per_second += 1
-        elif message_type == int(SC_REQUESTED_FRAME_SYNC):
-            respond(sock, SC_REQUESTED_FRAME_SYNC)
-            frame = get_frame(sock, width, newHeightUp - newHeightLow)
-            image = create_blackwhite_image(frame, width, newHeightUp - newHeightLow)
+        elif message_type == MessageType.SC_REQUESTED_FRAME_SYNC.value:
+            iface.respond(MessageType.SC_REQUESTED_FRAME_SYNC.value)
+            frame = iface.get_frame()
+            image = create_blackwhite_image(frame, WIDTH, (int(HEIGHT * HEIGHT_MULT_UP) - int(HEIGHT * HEIGHT_MULT_LOW)))
             image.save('output_image_blackwhite.png')
             #image.show()
 
