@@ -4,11 +4,10 @@ import time
 import signal
 import numpy as np
 import random
-import cv2
 from tminterface.structs import SimStateData, CheckpointData
-from PIL import Image
 from tminterface2 import MessageType, TMInterface
 from imageprocessing import Imageprocessing
+from utils import mat3_to_ypr
 import sys, os
 
 HOST = "127.0.0.1"
@@ -81,10 +80,15 @@ def main():
                 print(state.dyna.current_state.position)
 
                 # Szybkosc gracza [przod/tyl, gora/dol, lewo/prawo]
-                print(state.dyna.current_state.linear_speed)
-
+                print(np.linalg.norm(state.dyna.current_state.linear_speed))
+                #np.linalg.norm(speedvector)     
                 # Rotacja gracza (macierz 3x3 nie rozumiem wartosci)
-                # print(state.dyna.current_state.rotation)
+                # Lekturka do zrozumienia: https://en.wikipedia.org/wiki/Rotation_matrix#In_three_dimensions
+                # TODO: nie wiem czemu nie mozna dostac sie do wartosci
+                # taki blad: shape and index need to be the same length
+                # tmp = state.dyna.current_state.rotation[0]
+                # print(tmp)
+                #print(mat3_to_ypr(tmp))
 
                 # Czy kola maja kontakt z torem
                 # Czy sie slizgaja kola
