@@ -8,6 +8,7 @@ from tminterface.structs import SimStateData, CheckpointData
 from tminterface2 import MessageType, TMInterface
 from imageprocessing import Imageprocessing
 from utils import mat3_to_ypr
+from gamelauncher import GameLauncher
 import sys, os
 
 HOST = "127.0.0.1"
@@ -21,12 +22,17 @@ N_RAYS = 32
 
 def main():
     first_state = 0
-
     frame = 0
-
     ticks_per_second = 0
     now = time.time()
 
+    # Launching game
+    gameinstance = GameLauncher()
+    gameinstance.start_game()
+    # Time for game to launch itself
+    time.sleep(3)
+
+    # Creating connection
     iface = TMInterface(HOST, PORT, WIDTH, HEIGHT, HEIGHT_MULT_UP, HEIGHT_MULT_LOW)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     signal.signal(signal.SIGINT, iface.signal_handler)
