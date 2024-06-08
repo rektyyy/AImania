@@ -10,7 +10,8 @@ enum MessageType {
     CGiveUp,
     CExecuteCommand,
     CRequestFrame,
-    SCRequestedFrameSync
+    SCRequestedFrameSync,
+    CGetSimulationState
 }
 
 const string HOST = "127.0.0.1";
@@ -133,6 +134,18 @@ int HandleMessage()
             break;
         }
 
+        case MessageType::CGetSimulationState: {
+            auto@ state = simManager.SaveState();
+            const auto@ data = state.ToArray();
+            if(debug){
+                print("Server: get_simulation_state");
+            }
+
+            clientSock.Write(int(data.Length));
+            clientSock.Write(data);
+            break;
+        }
+
         case MessageType::SCRequestedFrameSync: {
             break;
         }
@@ -148,12 +161,12 @@ void OnRunStep(SimulationManager@ simManager)
         return;
     }
 
-    auto@ state = simManager.SaveState();
-    auto@ data = state.ToArray();
+    // auto@ state = simManager.SaveState();
+    // auto@ data = state.ToArray();
 
     clientSock.Write(MessageType::SCRunStepSync);
-    clientSock.Write(data.Length);
-    clientSock.Write(data);
+    //clientSock.Write(data.Length);
+    //clientSock.Write(data);
     WaitForResponse(MessageType::SCRunStepSync);
 }
 

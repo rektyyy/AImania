@@ -13,8 +13,8 @@ import sys, os
 
 HOST = "127.0.0.1"
 PORT = 8478
-WIDTH = 320
-HEIGHT = 320
+WIDTH = 160
+HEIGHT = 160
 HEIGHT_MULT_UP = 0.9
 HEIGHT_MULT_LOW = 0.3
 NEW_HEIGHT = int(HEIGHT * HEIGHT_MULT_UP) - int(HEIGHT * HEIGHT_MULT_LOW)
@@ -51,14 +51,9 @@ def main():
 
     inGameSetupCommands = ["cam 3"]
     while True:
-        message_type = struct.unpack('i', sock.recv(4))[0]
+        message_type = iface.read_int32()
         if message_type == MessageType.SC_RUN_STEP_SYNC.value:
-
-            state_length = struct.unpack('i', sock.recv(4))[0]
-            state = SimStateData(sock.recv(state_length))
-            state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length)
-            state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
-
+            state = iface.get_simulation_state()
             race_time = state.player_info.race_time
             if race_time > 60000: #minuta
                 #give_up(sock)

@@ -15,6 +15,7 @@ class MessageType(Enum):
     C_EXECUTE_COMMAND = 6
     C_REQUEST_FRAME = 7
     SC_REQUESTED_FRAME_SYNC = 8
+    C_GET_SIMULATION_STATE = 9
 
 class TMInterface:
     def __init__(self, host, port, width, height, heightMultUp, heightMultLow):
@@ -65,6 +66,20 @@ class TMInterface:
 
     def read_int32(self):
         return struct.unpack("i", self.sock.recv(4, socket.MSG_WAITALL))[0]
+
+    def get_simulation_state(self):
+        # message_type = iface.read_int32()
+        # state_length = struct.unpack('i', sock.recv(4))[0]
+        # state = SimStateData(sock.recv(state_length))
+        # state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length)
+        # state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
+
+        self.sock.sendall(struct.pack("i", MessageType.C_GET_SIMULATION_STATE.value))
+        state_length = self.read_int32()
+        state = SimStateData(self.sock.recv(state_length, socket.MSG_WAITALL))
+        state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length)
+        state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
+        return state
 
     def respond(self, type):
         self.sock.sendall(struct.pack('i', type))
