@@ -34,8 +34,9 @@ class TMInterface:
         self.sock.sendall(struct.pack('i', MessageType.C_SHUTDOWN.value))
         self.sock.close()
 
-    #TODO: fix
     def rewind_to_state(self, state):
+        if state == 0:
+            raise Exception("Please restart level")
         self.sock.sendall(struct.pack('i', MessageType.C_REWIND_TO_STATE.value))
         self.sock.sendall(struct.pack('i', len(state.data)))
         self.sock.sendall(state.data)
@@ -68,12 +69,6 @@ class TMInterface:
         return struct.unpack("i", self.sock.recv(4, socket.MSG_WAITALL))[0]
 
     def get_simulation_state(self):
-        # message_type = iface.read_int32()
-        # state_length = struct.unpack('i', sock.recv(4))[0]
-        # state = SimStateData(sock.recv(state_length))
-        # state.cp_data.resize(CheckpointData.cp_states_field, state.cp_data.cp_states_length)
-        # state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
-
         self.sock.sendall(struct.pack("i", MessageType.C_GET_SIMULATION_STATE.value))
         state_length = self.read_int32()
         state = SimStateData(self.sock.recv(state_length, socket.MSG_WAITALL))
